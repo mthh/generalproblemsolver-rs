@@ -1,0 +1,6 @@
+[package]
+name = "generalproblemsolver"
+version = "0.1.0"
+authors = ["mthh <matthieu.viry@cnrs.fr>"]
+
+[dependencies]
