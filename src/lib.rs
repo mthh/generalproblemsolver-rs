@@ -1,7 +1,11 @@
+#[macro_use]extern crate serde_derive;
+extern crate serde;
+extern crate serde_json;
+
 use std::fmt::{Debug, Display};
 use std::cmp::PartialEq;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct Operator<T> {
     action: T,
     preconds: Vec<T>,
@@ -9,7 +13,7 @@ pub struct Operator<T> {
     delete: Vec<T>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Deserialize)]
 struct Problem<T> {
     start: Vec<T>,
     finish: Vec<T>,
@@ -17,24 +21,19 @@ struct Problem<T> {
 }
 
 pub fn problem_solver<T>(
-    initial_states: &mut [T],
-    goal_states: &mut [T],
-    operators: &mut[Operator<T>],
+    initial_states: &[T],
+    goal_states: &[T],
+    operators: &[Operator<T>],
 ) -> Option<Vec<T>>
 where
     T: Clone + Debug + Display + From<String> + PartialEq
 {
-    let prefix = String::from("Executing ");
-    for operator in operators.iter_mut() {
-        operator.add.push(T::from(format!("{}{}", prefix, operator.action)));
-    }
     let mut goal_stack = Vec::new();
     let mut result_actions = Vec::new();
     let final_states = achieve_all(
         initial_states, operators, goal_states, &mut goal_stack, &mut result_actions);
     match final_states {
         None => None,
-        // Some(f_s) => Some(f_s.iter().filter(|a| a.starts_with(&prefix)).cloned().collect())
         Some(..) => Some(result_actions),
      }
 }
@@ -76,7 +75,6 @@ fn achieve<T>(
 where
     T: Clone + Debug + Display + From<String> + PartialEq
 {
-    // println!("achieve() : size goal stack : {:?} | Achieving {:?}", goal_stack.len(), goal);
     if states.contains(goal) {
         return Some(states);
     }
@@ -104,14 +102,12 @@ fn apply_operator<T>(
 where
     T: Clone + Debug + Display + From<String> + PartialEq
 {
-        // println!("apply_operator() : size goal stack : {:?} | Consider {:?}", goal_stack.len(), op.action);
         let mut _gs: Vec<T> = goal_stack.to_vec();
         _gs.push(goal.clone());
         let result = achieve_all(states, operators, &op.preconds, &mut _gs, result_actions);
         match result {
             None => None,
             Some(res) => {
-                // println!("apply_operator() : size goal stack : {:?} | Action {:?}", goal_stack.len(), op.action);
                 result_actions.push(op.action.clone());
                 let (mut add_list, del_list) = (op.add.clone(), op.delete.clone());
                 let mut r: Vec<T>= res.iter()
@@ -127,10 +123,10 @@ where
 #[cfg(test)]
 mod tests {
     use {Problem, Operator, problem_solver};
-
+    use serde_json;
     #[test]
-    fn it_works() {
-        let mut example = Problem {
+    fn test_monkey_problem() {
+        let example = Problem {
             start: vec!["at door".to_string(), "on floor".to_string(), "has ball".to_string(), "hungry".to_string(), "chair at door".to_string()],
             finish: vec!["not hungry".to_string()],
             ops: vec![
@@ -172,7 +168,8 @@ mod tests {
             	}
             ]
         };
-        let res = problem_solver(&mut example.start, &mut example.finish, &mut example.ops);
+        let res = problem_solver(&example.start, &example.finish, &example.ops);
+        println!("{:?}", example);
         assert_eq!(res, Some(vec![
             "push chair from door to middle room".to_string(),
             "climb on chair".to_string(),
@@ -180,89 +177,101 @@ mod tests {
             "grasp bananas".to_string(),
             "eat bananas".to_string()]));
     }
+
+    #[test]
+    fn test_monkey_problem_from_json() {
+        let str_example = r#"{
+        "start": ["at door", "on floor", "has ball", "hungry", "chair at door"],
+        "finish": ["not hungry"],
+        "ops": [
+    	{
+    	    "action": "climb on chair",
+    	    "preconds": ["chair at middle room", "at middle room", "on floor"],
+    	    "add": ["at bananas", "on chair"],
+    	    "delete": ["at middle room", "on floor"]
+    	},
+    	{
+    	    "action": "push chair from door to middle room",
+    	    "preconds": ["chair at door", "at door"],
+    	    "add": ["chair at middle room", "at middle room"],
+    	    "delete": ["chair at door", "at door"]
+    	},
+    	{
+    	    "action": "walk from door to middle room",
+    	    "preconds": ["at door", "on floor"],
+    	    "add": ["at middle room"],
+    	    "delete": ["at door"]
+    	},
+    	{
+    	    "action": "grasp bananas",
+    	    "preconds": ["at bananas", "empty handed"],
+    	    "add": ["has bananas"],
+    	    "delete": ["empty handed"]
+    	},
+    	{
+    	    "action": "drop ball",
+    	    "preconds": ["has ball"],
+    	    "add": ["empty handed"],
+    	    "delete": ["has ball"]
+    	},
+    	{
+    	    "action": "eat bananas",
+    	    "preconds": ["has bananas"],
+    	    "add": ["empty handed", "not hungry"],
+    	    "delete": ["has bananas", "hungry"]
+    	}
+    ]
+}"#;
+
+    let example: Problem<String> = serde_json::from_str(str_example).unwrap();
+    let res = problem_solver(&example.start, &example.finish, &example.ops);
+    assert_eq!(res, Some(vec![
+        "push chair from door to middle room".to_string(),
+        "climb on chair".to_string(),
+        "drop ball".to_string(),
+        "grasp bananas".to_string(),
+        "eat bananas".to_string()]));
+
+    }
+
+    #[test]
+    fn test_baseball_problem() {
+        let str_example = r#"{
+                "start": ["hand empty", "arm down"],
+                "finish": ["satisfied", "baseball in air"],
+                "ops": [
+                {
+                    "action": "raise arm",
+                    "preconds": ["arm down"],
+                    "add": ["arm up", "raising arm"],
+                    "delete": ["arm down"]
+                },
+                {
+                    "action": "throw baseball",
+                    "preconds": ["have baseball", "arm up"],
+                    "add": ["arm down", "baseball in air", "throwing baseball"],
+                    "delete": ["have baseball", "arm up"]
+                },
+                {
+                    "action": "grab baseball",
+                    "preconds": ["hand empty", "arm down"],
+                    "add": ["have baseball", "grabbing baseball"],
+                    "delete": ["hand empty"]
+                },
+                {
+                    "action": "drink beer",
+                    "preconds": ["arm down", "hand empty"],
+                    "add": ["satisfied", "drinking beer"],
+                    "delete": []
+                }
+            ]
+        }"#;
+        let example: Problem<String> = serde_json::from_str(str_example).unwrap();
+        let res = problem_solver(&example.start, &example.finish, &example.ops);
+        assert_eq!(res, Some(vec![
+            "drink beer".to_string(),
+            "grab baseball".to_string(),
+            "raise arm".to_string(),
+            "throw baseball".to_string()]));
+    }
 }
-
-
-// #[derive(Clone, Debug)]
-// pub struct Operator {
-//     action: String,
-//     preconds: Vec<String>,
-//     add: Vec<String>,
-//     delete: Vec<String>,
-// }
-//
-// #[derive(Clone, Debug)]
-// struct Problem {
-//     start: Vec<String>,
-//     finish: Vec<String>,
-//     ops: Vec<Operator>,
-// }
-//
-// pub fn gps(initial_states: &mut [String], goal_states: &mut [String], operators: &mut[Operator]) -> Option<Vec<String>>{
-//     let prefix = String::from("Executing ");
-//     for operator in operators.iter_mut() {
-//         operator.add.push(format!("{}{}", prefix, operator.action));
-//     }
-//     let mut goal_stack = Vec::new();
-//     let final_states = achieve_all(initial_states, operators, goal_states, &mut goal_stack);
-//     println!("{:?}", operators);
-//     match final_states {
-//         None => None,
-//         Some(f_s) => {
-//             println!("{:?}", f_s);
-//             Some(f_s.iter().filter(|a| a.starts_with(&prefix)).cloned().collect())
-//         }
-//      }
-// }
-//
-// fn achieve_all(states: &[String], ops: &[Operator], goals: &[String], goal_stack: &mut[String]) -> Option<Vec<String>> {
-//     let mut st = Some((*states).to_vec());
-//     let mut _st = st.unwrap();
-//     for goal in goals {
-//         st = achieve(_st, ops, &goal, goal_stack);
-//         match st {
-//             None => return None,
-//             Some(v) => _st = v,
-//         }
-//     }
-//     for goal in goals {
-//         if !_st.contains(goal) {
-//             return None;
-//         }
-//     }
-//     Some(_st)
-// }
-//
-// fn achieve(states: Vec<String>, operators: &[Operator], goal: &String, goal_stack: &mut[String]) -> Option<Vec<String>> {
-//     println!("achieve() : size goal stack : {:?} | Achieving {:?}", goal_stack.len(), goal);
-//     if states.contains(goal) {
-//         return Some(states);
-//     }
-//     for op in operators.iter() {
-//         if !op.add.contains(goal) {
-//              continue;
-//         }
-//         let res = apply_operator(op, &states, operators, goal, goal_stack);
-//         if res.is_some() {
-//             return res;
-//         }
-//     }
-//     None
-// }
-//
-// fn apply_operator(op: &Operator, states: &[String], operators: &[Operator], goal: &str, goal_stack: &mut[String]) -> Option<Vec<String>> {
-//         println!("apply_operator() : size goal stack : {:?} | Consider {:?}", goal_stack.len(), op.action);
-//         let mut _gs: Vec<String> = goal_stack.to_vec();
-//         _gs.push(goal.to_string());
-//         let result = achieve_all(states, operators, &op.preconds, &mut _gs);
-//         match result {
-//             None => None,
-//             Some(res) => {
-//                 println!("apply_operator() : size goal stack : {:?} | Action {:?}", goal_stack.len(), op.action);
-//                 let (mut add_list, delete_list) = (op.add.clone(), op.delete.clone());
-//                 let mut r: Vec<String>= res.iter().cloned().filter(|a| !delete_list.contains(a)).collect();
-//                 r.append(&mut add_list);
-//                 Some(r)
-//             }
-//         }
-// }
